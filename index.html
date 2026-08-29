@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LinguaBridge — Translator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0E1420;
+    --surface:#161E2E;
+    --surface-2:#1D2740;
+    --line:#2A3550;
+    --accent:#3DDC97;
+    --accent-2:#4D8CFF;
+    --text:#EAEEF7;
+    --muted:#8993AC;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  body{background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100vh; padding:32px 16px;}
+  .display{font-family:'Space Grotesk',sans-serif;}
+  #app{max-width:840px; margin:0 auto;}
+  header{text-align:center; margin-bottom:26px;}
+  header h1{font-size:26px; font-weight:700;}
+  header p{color:var(--muted); font-size:13px; margin-top:6px;}
+
+  .lang-bar{display:flex; align-items:center; gap:10px; margin-bottom:16px;}
+  select{flex:1; background:var(--surface); border:1px solid var(--line); color:var(--text); padding:11px; border-radius:10px; font-family:inherit; font-size:14px;}
+  .swap{background:var(--surface-2); border:1px solid var(--line); color:var(--accent); width:40px; height:40px; border-radius:50%; cursor:pointer; font-size:16px; flex-shrink:0;}
+  .swap:hover{border-color:var(--accent);}
+
+  .panes{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .pane{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:16px; display:flex; flex-direction:column;}
+  .pane .lbl{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); margin-bottom:8px; font-weight:600;}
+  textarea{background:transparent; border:none; color:var(--text); font-family:inherit; font-size:15px; resize:none; height:150px; outline:none; line-height:1.5;}
+  #outputText{color:var(--text); font-size:15px; line-height:1.5; min-height:150px; white-space:pre-wrap;}
+  .pane-actions{display:flex; gap:8px; margin-top:10px; justify-content:flex-end;}
+  .icon-btn{background:var(--surface-2); border:1px solid var(--line); color:var(--muted); font-size:13px; padding:7px 12px; border-radius:8px; cursor:pointer; display:flex; align-items:center; gap:6px;}
+  .icon-btn:hover{color:var(--text); border-color:var(--accent);}
+  .charcount{font-size:11px; color:var(--muted); margin-top:6px;}
+
+  .translate-btn{display:block; width:100%; margin-top:16px; background:linear-gradient(90deg,var(--accent),var(--accent-2)); color:#0E1420; border:none; font-weight:700; font-size:15px; padding:14px; border-radius:12px; cursor:pointer;}
+  .translate-btn:hover{filter:brightness(1.08);}
+  .translate-btn:disabled{opacity:.6; cursor:default;}
+  .status{text-align:center; font-size:12px; color:var(--muted); margin-top:10px; min-height:16px;}
+
+  @media(max-width:600px){ .panes{grid-template-columns:1fr;} }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1 class="display">🌐 LinguaBridge</h1>
+    <p>Type text, pick your languages, translate instantly.</p>
+  </header>
+
+  <div class="lang-bar">
+    <select id="sourceLang"></select>
+    <button class="swap" id="swapBtn" title="Swap languages">⇄</button>
+    <select id="targetLang"></select>
+  </div>
+
+  <div class="panes">
+    <div class="pane">
+      <div class="lbl">Enter text</div>
+      <textarea id="inputText" placeholder="Type something to translate..."></textarea>
+      <div class="charcount"><span id="charCount">0</span> / 500 characters</div>
+      <div class="pane-actions">
+        <button class="icon-btn" id="speakInputBtn">🔊 Listen</button>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="lbl">Translation</div>
+      <div id="outputText">Your translation will appear here.</div>
+      <div class="pane-actions">
+        <button class="icon-btn" id="copyBtn">📋 Copy</button>
+        <button class="icon-btn" id="speakOutputBtn">🔊 Listen</button>
+      </div>
+    </div>
+  </div>
+
+  <button class="translate-btn" id="translateBtn">Translate</button>
+  <div class="status" id="statusMsg"></div>
+</div>
+
+<script>
+(function(){
+  // Common language list: code, name, BCP-47 for speech
+  const LANGS = [
+    {code:'en', name:'English', speech:'en-US'},
+    {code:'es', name:'Spanish', speech:'es-ES'},
+    {code:'fr', name:'French', speech:'fr-FR'},
+    {code:'de', name:'German', speech:'de-DE'},
+    {code:'it', name:'Italian', speech:'it-IT'},
+    {code:'pt', name:'Portuguese', speech:'pt-PT'},
+    {code:'ru', name:'Russian', speech:'ru-RU'},
+    {code:'zh', name:'Chinese (Simplified)', speech:'zh-CN'},
+    {code:'ja', name:'Japanese', speech:'ja-JP'},
+    {code:'ko', name:'Korean', speech:'ko-KR'},
+    {code:'ar', name:'Arabic', speech:'ar-SA'},
+    {code:'hi', name:'Hindi', speech:'hi-IN'},
+    {code:'ur', name:'Urdu', speech:'ur-PK'},
+    {code:'tr', name:'Turkish', speech:'tr-TR'},
+    {code:'nl', name:'Dutch', speech:'nl-NL'}
+  ];
+
+  const sourceSel = document.getElementById('sourceLang');
+  const targetSel = document.getElementById('targetLang');
+  LANGS.forEach(l=>{
+    const o1 = document.createElement('option'); o1.value=l.code; o1.textContent=l.name;
+    const o2 = document.createElement('option'); o2.value=l.code; o2.textContent=l.name;
+    sourceSel.appendChild(o1); targetSel.appendChild(o2);
+  });
+  sourceSel.value = 'en';
+  targetSel.value = 'es';
+
+  const inputText = document.getElementById('inputText');
+  const outputText = document.getElementById('outputText');
+  const charCount = document.getElementById('charCount');
+  const statusMsg = document.getElementById('statusMsg');
+  const translateBtn = document.getElementById('translateBtn');
+
+  inputText.addEventListener('input', ()=>{
+    const len = inputText.value.length;
+    charCount.textContent = Math.min(len,500);
+    if(len>500) inputText.value = inputText.value.slice(0,500);
+  });
+
+  document.getElementById('swapBtn').addEventListener('click', ()=>{
+    const tmp = sourceSel.value;
+    sourceSel.value = targetSel.value;
+    targetSel.value = tmp;
+  });
+
+  // Uses the free MyMemory Translation API (no key required, generous free tier).
+  async function translate(text, source, target){
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${source}|${target}`;
+    const res = await fetch(url);
+    if(!res.ok) throw new Error('Network error');
+    const data = await res.json();
+    if(data && data.responseData && data.responseData.translatedText){
+      return data.responseData.translatedText;
+    }
+    throw new Error('Translation unavailable');
+  }
+
+  translateBtn.addEventListener('click', async ()=>{
+    const text = inputText.value.trim();
+    if(!text){ statusMsg.textContent = 'Please enter some text first.'; return; }
+    translateBtn.disabled = true;
+    translateBtn.textContent = 'Translating...';
+    statusMsg.textContent = '';
+    try{
+      const result = await translate(text, sourceSel.value, targetSel.value);
+      outputText.textContent = result;
+    }catch(e){
+      statusMsg.textContent = 'Could not translate right now — please try again in a moment.';
+    }finally{
+      translateBtn.disabled = false;
+      translateBtn.textContent = 'Translate';
+    }
+  });
+
+  document.getElementById('copyBtn').addEventListener('click', ()=>{
+    const text = outputText.textContent;
+    if(!text || text==='Your translation will appear here.') return;
+    navigator.clipboard.writeText(text).then(()=>{
+      statusMsg.textContent = 'Copied to clipboard!';
+      setTimeout(()=>statusMsg.textContent='', 1500);
+    });
+  });
+
+  function speak(text, langCode){
+    if(!text) return;
+    if(!('speechSynthesis' in window)){
+      statusMsg.textContent = 'Text-to-speech not supported in this browser.';
+      return;
+    }
+    const langObj = LANGS.find(l=>l.code===langCode);
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = langObj ? langObj.speech : 'en-US';
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utter);
+  }
+  document.getElementById('speakInputBtn').addEventListener('click', ()=>speak(inputText.value, sourceSel.value));
+  document.getElementById('speakOutputBtn').addEventListener('click', ()=>{
+    const text = outputText.textContent;
+    if(text && text!=='Your translation will appear here.') speak(text, targetSel.value);
+  });
+})();
+</script>
+</body>
+</html>
